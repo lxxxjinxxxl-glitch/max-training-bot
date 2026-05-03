@@ -1,5 +1,6 @@
 import re
 import time
+import asyncio
 import os
 import requests
 from fastapi import FastAPI, Request
@@ -7,8 +8,8 @@ from fastapi import FastAPI, Request
 BOT_TOKEN = os.getenv("BOT_TOKEN", "f9LHodD0cOIzxFR48PGWufr_4B9omZdcIZnBaHe9izzs8f5lvtYDS-_4QeNWF9T8YXXj2Q2L9fcPMHC6JDNW")
 API_URL = "https://platform-api.max.ru/messages"
 MY_SURNAMES = "Щекетов\nОкуньков"
-DELAY = 1
-COOLDOWN = 1800
+DELAY = 1          # ← Задержка перед отправкой (секунды)
+COOLDOWN = 1800    # ← Кулдаун между срабатываниями (30 минут)
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", None)
 
 last_training_time = 0
@@ -67,6 +68,7 @@ async def webhook(req: Request):
 
     print(f"💬 chat_id={chat_id} | user={user_id} | private={is_private} | text={text[:80]}")
 
+    # === ЛИЧКА ===
     if is_private and text:
         if text.startswith("/chatid"):
             send_to_user(user_id, f"chat_id: {chat_id}")
@@ -91,6 +93,7 @@ async def webhook(req: Request):
             else: send_to_user(user_id, "❌ Нет активной записи")
             return {"ok": True}
 
+    # === ГРУППОВОЙ ЧАТ ===
     if not is_private and text:
         if TARGET_CHAT_ID and chat_id != TARGET_CHAT_ID: return {"ok": True}
         if is_training(text):
@@ -99,7 +102,7 @@ async def webhook(req: Request):
                 print("🔁 Кулдаун")
                 return {"ok": True}
             print(f"🎯 Тренировка! Жду {DELAY} сек...")
-            time.sleep(DELAY)
+            await asyncio.sleep(DELAY)  # ← Асинхронная задержка (не блокирует сервер)
             resp = send_message(chat_id, MY_SURNAMES)
             if isinstance(resp, dict) and resp.get("message"):
                 last_message_id = resp["message"]["body"]["mid"]
