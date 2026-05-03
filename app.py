@@ -17,6 +17,11 @@ last_chat_id = None
 
 app = FastAPI()
 
+@app.get("/")
+@app.get("/hockey")
+def health():
+    return {"status": "ok"}
+
 def send_message(chat_id, text):
     resp = requests.post(f"{API_URL}?chat_id={chat_id}", headers={"Authorization": BOT_TOKEN, "Content-Type": "application/json"}, json={"text": text})
     print(f"SEND: {resp.status_code}")
