@@ -76,12 +76,11 @@ def control_buttons(msg_id):
     }
 
 @app.post("/webhook")
+@app.post("/webhook")
 async def webhook(req: Request):
-    global last_training_time, last_message_id, last_chat_id, edit_state
-
     data = await req.json()
-    print("📩 FULL:", json.dumps(data, ensure_ascii=False)[:800])  # ВСЕ запросы
-    utype = data.get("update_type", "")
+    print("📩 CALLBACK RAW:", json.dumps(data, ensure_ascii=False)[:1000])
+    return {"ok": True}
 
     # === ОБРАБОТКА КНОПОК (callback) ===
     if utype == "message_callback":
