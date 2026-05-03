@@ -26,14 +26,14 @@ app = FastAPI(root_path="/hockey")
 def health():
     return {"status": "ok"}
 
-def send_message(chat_id, text, inline_keyboard=None):
+def send_message(chat_id, text, reply_keyboard=None):
     if int(chat_id) < 0:
         url = f"{API_URL}?chat_id={chat_id}"
     else:
         url = f"{API_URL}?user_id={chat_id}"
     payload = {"text": text}
-    if inline_keyboard:
-        payload["attachments"] = inline_keyboard["attachments"]
+    if reply_keyboard:
+        payload["keyboard"] = reply_keyboard
     resp = requests.post(url, headers={"Authorization": BOT_TOKEN, "Content-Type": "application/json"}, json=payload)
     print(f"SEND: {resp.status_code}")
     try: return resp.json()
@@ -49,8 +49,8 @@ def delete_message(message_id):
     print(f"DELETE: {resp.status_code}")
     return resp.status_code
 
-def send_to_user(user_id, text, inline_keyboard=None):
-    return send_message(user_id, text, inline_keyboard)
+def send_to_user(user_id, text, reply_keyboard=None):
+    return send_message(user_id, text, reply_keyboard)
 
 def is_training(text):
     triggers = ["Внимание", "▶️", "Место проведения", "Лед:", "ОФП:", "Направленность"]
@@ -58,20 +58,16 @@ def is_training(text):
     has_date = bool(re.search(r'\d{2}\.\d{2}\.\d{2,4}', text))
     return hits >= 3 and has_date
 
-def control_buttons(msg_id):
-    return {
-        "attachments": [{
-            "type": "inline_keyboard",
-            "payload": {
-                "buttons": [
-                    [
-                        {"type": "callback", "text": "✏️ Редактировать", "payload": f"edit_{msg_id}"},
-                        {"type": "callback", "text": "🗑 Удалить", "payload": f"delete_{msg_id}"}
-                    ]
-                ]
-            }
-        }]
-    }
+def control_keyboard():
+    """Клавиатура с кнопками управления (как у старого бота)"""
+    return json.dumps({
+        "keyboard": [
+            [{"text": "✏️ Редактировать запись"}],
+            [{"text": "🗑 Удалить запись"}],
+            [{"text": "📊 Статус"}]
+        ],
+        "resize_keyboard": True
+    })
 
 @app.post("/webhook")
 async def webhook(req: Request):
@@ -80,30 +76,9 @@ async def webhook(req: Request):
     data = await req.json()
     utype = data.get("update_type", "")
 
-    # === CALLBACK (кнопки) ===
     if utype == "message_callback" or data.get("callback"):
-        cb = data.get("callback") or data
-        user_id = str(cb.get("user", {}).get("user_id") or cb.get("from", {}).get("user_id") or "")
-        cb_data = cb.get("payload") or cb.get("data") or ""
-
-        if cb_data.startswith("delete_"):
-            target_id = cb_data.split("_")[1]
-            delete_message(target_id)
-            if last_message_id == target_id:
-                last_message_id = None
-                last_training_time = 0
-            send_to_user(user_id, "✅ Сообщение удалено")
-            return {"ok": True}
-
-        if cb_data.startswith("edit_"):
-            target_id = cb_data.split("_")[1]
-            edit_state[user_id] = target_id
-            send_to_user(user_id, "✏️ Введите новый текст (например: Щекетов):")
-            return {"ok": True}
-
         return {"ok": True}
 
-    # === НОВЫЕ СООБЩЕНИЯ ===
     if utype != "message_created":
         return {"ok": True}
 
@@ -122,24 +97,44 @@ async def webhook(req: Request):
         new_text = text.strip()
         if new_text:
             edit_message(target_id, new_text)
-            send_to_user(user_id, f"✅ Изменено на:\n{new_text}")
+            send_to_user(user_id, f"✅ Изменено на:\n{new_text}", control_keyboard())
         else:
-            send_to_user(user_id, "❌ Текст не может быть пустым")
+            send_to_user(user_id, "❌ Текст не может быть пустым", control_keyboard())
         return {"ok": True}
 
-    # === ЛИЧКА: КОМАНДЫ ===
+    # === ЛИЧКА: КОМАНДЫ И КНОПКИ ===
     if is_private and text:
-        if text == "/start":
-            send_to_user(user_id, "Привет! 🏒\n/статус — статус записи\n/отмена — удалить запись\n/chatid — ID чата")
+        if text == "/start" or text == "🏒 Главное меню":
+            send_to_user(user_id, "Управление записью:", control_keyboard())
             return {"ok": True}
+
+        if text == "✏️ Редактировать запись":
+            if last_message_id:
+                edit_state[user_id] = last_message_id
+                send_to_user(user_id, "✏️ Введите новый текст (например: Щекетов\nОкуньков):")
+            else:
+                send_to_user(user_id, "❌ Нет активной записи", control_keyboard())
+            return {"ok": True}
+
+        if text == "🗑 Удалить запись":
+            if last_message_id:
+                delete_message(last_message_id)
+                send_to_user(user_id, "✅ Запись удалена", control_keyboard())
+                last_message_id = None
+                last_training_time = 0
+            else:
+                send_to_user(user_id, "❌ Нечего удалять", control_keyboard())
+            return {"ok": True}
+
+        if text == "📊 Статус":
+            if last_message_id:
+                send_to_user(user_id, f"✅ Запись активна\nЧат: {last_chat_id}\nmsg_id: {last_message_id}", control_keyboard())
+            else:
+                send_to_user(user_id, "❌ Нет активной записи", control_keyboard())
+            return {"ok": True}
+
         if text.startswith("/chatid"):
             send_to_user(user_id, f"chat_id: {chat_id}")
-            return {"ok": True}
-        if text == "/статус":
-            if last_message_id:
-                send_to_user(user_id, f"✅ Запись активна\nЧат: {last_chat_id}\nmsg_id: {last_message_id}")
-            else:
-                send_to_user(user_id, "❌ Нет активной записи")
             return {"ok": True}
 
     # === ГРУППОВОЙ ЧАТ: ТРЕНИРОВКА ===
@@ -163,11 +158,11 @@ async def webhook(req: Request):
                 last_training_time = now
                 print(f"✅ Записан! msg_id={last_message_id}")
 
-                # Уведомление в личку с кнопками
+                # Уведомление в личку с клавиатурой
                 send_to_user(
                     OWNER_USER_ID,
-                    f"📝 Запись в чате {chat_id}:\n{MY_SURNAMES}",
-                    control_buttons(last_message_id)
+                    f"📝 Запись в чате:\n{MY_SURNAMES}",
+                    control_keyboard()
                 )
 
     return {"ok": True}
