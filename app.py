@@ -15,7 +15,7 @@ last_training_time = 0
 last_message_id = None
 last_chat_id = None
 
-app = FastAPI()
+app = FastAPI(root_path="/hockey")
 
 @app.get("/")
 @app.get("/hockey")
