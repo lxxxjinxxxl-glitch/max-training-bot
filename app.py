@@ -9,10 +9,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "f9LHodD0cOIzxFR48PGWufr_4B9omZdcIZnBaHe9izzs
 API_URL = "https://platform-api.max.ru/messages"
 
 MY_SURNAMES = "Щекетов\nОкуньков"
-DELAY = 1         # ← Задержка перед отправкой (сек)
-COOLDOWN = 1800   # Кулдаун 30 минут
+DELAY = 1
+COOLDOWN = 1800
 
-TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", None)  # Пока None
+TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", None)
 
 # ========== ПАМЯТЬ ==========
 last_training_time = 0
@@ -78,11 +78,9 @@ async def webhook(req: Request):
     data = await req.json()
     utype = data.get("update_type", "")
 
-    # Пропускаем колбэки
     if utype == "message_callback":
         return {"ok": True}
 
-    # Интересуют только новые сообщения
     if utype != "message_created":
         return {"ok": True}
 
@@ -94,10 +92,8 @@ async def webhook(req: Request):
     msg_id = msg.get("body", {}).get("mid", "")
     is_private = chat_id.isdigit() and int(chat_id) > 0
 
-    # Всегда логируем chat_id (для отлова)
     print(f"💬 chat_id={chat_id} | user={user_id} | private={is_private} | text={text[:80]}")
 
-    # ===== ЛИЧКА =====
     if is_private and text:
 
         if text.startswith("/chatid"):
@@ -130,10 +126,8 @@ async def webhook(req: Request):
                 send_to_user(user_id, "❌ Нет активной записи")
             return {"ok": True}
 
-    # ===== ГРУППОВОЙ ЧАТ =====
     if not is_private and text:
 
-        # Фильтр по chat_id (если задан)
         if TARGET_CHAT_ID and chat_id != TARGET_CHAT_ID:
             return {"ok": True}
 
@@ -158,4 +152,5 @@ async def webhook(req: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    port = int(os.getenv("PORT", 5000))
+    uvicorn.run(app, host="::", port=port)
