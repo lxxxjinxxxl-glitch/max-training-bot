@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteCond %{REQUEST_URI} ^/hockey(/.*)?$
+RewriteRule ^hockey(/.*)?$ http://[::]:$PORT$1 [P,L]
