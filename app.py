@@ -12,12 +12,12 @@ MY_SURNAMES = "Щекетов\nОкуньков"
 DELAY = 1
 COOLDOWN = 1800
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", None)
-OWNER_USER_ID = "125743856"  # ← Ваш ID пользователя в MAX
+OWNER_USER_ID = "125743856"
 
 last_training_time = 0
 last_message_id = None
 last_chat_id = None
-edit_state = {}  # {user_id: message_id} — для FSM редактирования
+edit_state = {}
 
 app = FastAPI(root_path="/hockey")
 
@@ -27,7 +27,6 @@ def health():
     return {"status": "ok"}
 
 def send_message(chat_id, text, inline_keyboard=None):
-    """Отправить сообщение (чат или пользователь)"""
     if int(chat_id) < 0:
         url = f"{API_URL}?chat_id={chat_id}"
     else:
@@ -60,7 +59,6 @@ def is_training(text):
     return hits >= 3 and has_date
 
 def control_buttons(msg_id):
-    """Кнопки управления сообщением в личке"""
     return {
         "attachments": [{
             "type": "inline_keyboard",
@@ -76,22 +74,20 @@ def control_buttons(msg_id):
     }
 
 @app.post("/webhook")
-@app.post("/webhook")
 async def webhook(req: Request):
+    global last_training_time, last_message_id, last_chat_id, edit_state
+
     data = await req.json()
-    print("📩 CALLBACK RAW:", json.dumps(data, ensure_ascii=False)[:1000])
-    return {"ok": True}
+    utype = data.get("update_type", "")
 
-    # === ОБРАБОТКА КНОПОК (callback) ===
-    if utype == "message_callback":
-        cb = data.get("callback", {})
-        user_id = cb.get("user", {}).get("user_id", "")
-        payload = cb.get("payload", "")
-        msg_id = cb.get("message", {}).get("body", {}).get("mid", "")
+    # === CALLBACK (кнопки) ===
+    if utype == "message_callback" or data.get("callback"):
+        cb = data.get("callback") or data
+        user_id = str(cb.get("user", {}).get("user_id") or cb.get("from", {}).get("user_id") or "")
+        cb_data = cb.get("payload") or cb.get("data") or ""
 
-        # Удаление
-        if payload.startswith("delete_"):
-            target_id = payload.split("_")[1]
+        if cb_data.startswith("delete_"):
+            target_id = cb_data.split("_")[1]
             delete_message(target_id)
             if last_message_id == target_id:
                 last_message_id = None
@@ -99,9 +95,8 @@ async def webhook(req: Request):
             send_to_user(user_id, "✅ Сообщение удалено")
             return {"ok": True}
 
-        # Редактирование — запрос нового текста
-        if payload.startswith("edit_"):
-            target_id = payload.split("_")[1]
+        if cb_data.startswith("edit_"):
+            target_id = cb_data.split("_")[1]
             edit_state[user_id] = target_id
             send_to_user(user_id, "✏️ Введите новый текст (например: Щекетов):")
             return {"ok": True}
@@ -117,7 +112,6 @@ async def webhook(req: Request):
     chat = msg.get("recipient", {})
     chat_id = str(chat.get("chat_id") or chat.get("user_id") or "")
     user_id = str(msg.get("sender", {}).get("user_id", ""))
-    msg_id = msg.get("body", {}).get("mid", "")
     is_private = chat_id.isdigit() and int(chat_id) > 0
 
     print(f"💬 chat_id={chat_id} | user={user_id} | private={is_private} | text={text[:80]}")
@@ -135,23 +129,17 @@ async def webhook(req: Request):
 
     # === ЛИЧКА: КОМАНДЫ ===
     if is_private and text:
+        if text == "/start":
+            send_to_user(user_id, "Привет! 🏒\n/статус — статус записи\n/отмена — удалить запись\n/chatid — ID чата")
+            return {"ok": True}
         if text.startswith("/chatid"):
             send_to_user(user_id, f"chat_id: {chat_id}")
             return {"ok": True}
         if text == "/статус":
             if last_message_id:
-                send_to_user(user_id, f"✅ Запись активна\nchat_id: {last_chat_id}\nmsg_id: {last_message_id}")
+                send_to_user(user_id, f"✅ Запись активна\nЧат: {last_chat_id}\nmsg_id: {last_message_id}")
             else:
                 send_to_user(user_id, "❌ Нет активной записи")
-            return {"ok": True}
-        if text.startswith("/отмена"):
-            if last_message_id:
-                delete_message(last_message_id)
-                send_to_user(user_id, "✅ Запись удалена")
-                last_message_id = None
-                last_training_time = 0
-            else:
-                send_to_user(user_id, "❌ Нечего отменять")
             return {"ok": True}
 
     # === ГРУППОВОЙ ЧАТ: ТРЕНИРОВКА ===
@@ -168,7 +156,6 @@ async def webhook(req: Request):
             print(f"🎯 Тренировка! Жду {DELAY} сек...")
             await asyncio.sleep(DELAY)
 
-            # Отправляем в чат
             resp = send_message(chat_id, MY_SURNAMES)
             if isinstance(resp, dict) and resp.get("message"):
                 last_message_id = resp["message"]["body"]["mid"]
@@ -176,10 +163,10 @@ async def webhook(req: Request):
                 last_training_time = now
                 print(f"✅ Записан! msg_id={last_message_id}")
 
-                # Дублируем в личку с кнопками
+                # Уведомление в личку с кнопками
                 send_to_user(
                     OWNER_USER_ID,
-                    f"📝 Запись в чате {chat_id}:\n\n{MY_SURNAMES}",
+                    f"📝 Запись в чате {chat_id}:\n{MY_SURNAMES}",
                     control_buttons(last_message_id)
                 )
 
