@@ -80,7 +80,7 @@ async def webhook(req: Request):
     global last_training_time, last_message_id, last_chat_id, edit_state
 
     data = await req.json()
-    print("📩 FULL:", json.dumps(data, ensure_ascii=False, indent=2)[:600])
+    print("📩 FULL:", json.dumps(data, ensure_ascii=False)[:800])  # ВСЕ запросы
     utype = data.get("update_type", "")
 
     # === ОБРАБОТКА КНОПОК (callback) ===
